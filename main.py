@@ -4,7 +4,7 @@ from flask import Flask, request, session, g, redirect, url_for, abort, \
     render_template, flash
 from flask.ext.pymongo import PyMongo
 
-MONGO_URL = os.environ.get('MONGO_URL')
+MONGO_URL = os.environ.get('MONGODB_URI')
 if not MONGO_URL:
     MONGO_URL = "mongodb://localhost:27017/test_flask_db";
 
