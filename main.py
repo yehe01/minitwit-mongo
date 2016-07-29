@@ -2,7 +2,7 @@ import os
 import sqlite3
 from flask import Flask, request, session, g, redirect, url_for, abort, \
     render_template, flash
-from flask.ext.pymongo import PyMongo
+from flask_pymongo import PyMongo
 
 MONGO_URL = os.environ.get('MONGODB_URI')
 if not MONGO_URL:
