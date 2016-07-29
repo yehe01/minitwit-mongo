@@ -2,9 +2,17 @@ import os
 import sqlite3
 from flask import Flask, request, session, g, redirect, url_for, abort, \
     render_template, flash
+from flask.ext.pymongo import PyMongo
+
+MONGO_URL = os.environ.get('MONGO_URL')
+if not MONGO_URL:
+    MONGO_URL = "mongodb://localhost:27017/test_flask_db";
 
 app = Flask(__name__)
 app.config.from_object(__name__)
+
+app.config['MONGO_URI'] = MONGO_URL
+mongo = PyMongo(app)
 
 app.config.update(dict(
     DATABASE=os.path.join(app.root_path, 'flaskr.db'),
@@ -49,9 +57,10 @@ def close_db(error):
 
 @app.route('/')
 def show_entries():
-    db = get_db()
-    cur = db.execute('SELECT title, text FROM entries ORDER BY id DESC')
-    entries = cur.fetchall()
+    entries = mongo.db.entries.find()
+    # db = get_db()
+    # cur = db.execute('SELECT title, text FROM entries ORDER BY id DESC')
+    # entries = cur.fetchall()
     return render_template('show_entries.html', entries=entries)
 
 
@@ -59,10 +68,12 @@ def show_entries():
 def add_entry():
     if not session.get('logged_in'):
         abort(401)
-    db = get_db()
-    db.execute('INSERT INTO entries (title, text) VALUES (?, ?)',
-               [request.form['title'], request.form['text']])
-    db.commit()
+    # db = get_db()
+    # db.execute('INSERT INTO entries (title, text) VALUES (?, ?)',
+    #            [request.form['title'], request.form['text']])
+    # db.commit()
+    mongo.db.entries.insert({'title': request.form['title'],
+                             'text': request.form['text']})
     flash('New entry was successfully posted')
     return redirect(url_for('show_entries'))
 
