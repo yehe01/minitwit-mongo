@@ -145,6 +145,7 @@ div.page div.twitbox p {
 
 div.page div.twitbox input[type="text"] {
     width: 585px;
+    margin-top: 3px;
 }
 
 div.page div.twitbox input[type="submit"] {

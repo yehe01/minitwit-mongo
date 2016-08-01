@@ -48,15 +48,7 @@ def timeline():
 
     users = mongo.db.users.find({"$or": [{'followed_by': g.user['_id']},
                                          {'_id': g.user['_id']}]})
-    messages = []
-    for user in users:
-        tweets = user.get('tweets', [])
-        for tweet in tweets:
-            message = {'username': user['username'], 'email': user['email'],
-                       'pub_date': tweet['pub_date'], 'text': tweet['text']}
-            messages.append(message)
-
-    # todo: sort tweets by date
+    messages = compose_message(users)
 
     return render_template('timeline.html', messages=messages)
 
@@ -65,14 +57,7 @@ def timeline():
 def public_timeline():
     """Displays the latest tweets of all users."""
     users = mongo.db.users.find()
-    messages = []
-
-    for user in users:
-        tweets = user.get('tweets', [])
-        for tweet in tweets:
-            message = {'username': user['username'], 'email': user['email'],
-                       'pub_date': tweet['pub_date'], 'text': tweet['text']}
-            messages.append(message)
+    messages = compose_message(users)
 
     return render_template('timeline.html', messages=messages)
 
@@ -145,6 +130,9 @@ def add_tweet():
                               {"$push": {'tweets':
                                              {'text': request.form['text'], 'pub_date': int(time.time())}}})
         flash('Your tweet was recorded')
+    else:
+        flash('Content is empty.')
+
     return redirect(url_for('timeline'))
 
 
@@ -216,7 +204,18 @@ def gravatar_url(email, size=80):
            (md5(email.strip().lower().encode('utf-8')).hexdigest(), size)
 
 
-# add some filters to jinja
+# todo: sort tweets by date
+def compose_message(users):
+    messages = []
+    for user in users:
+        tweets = user.get('tweets', [])
+        for tweet in tweets:
+            message = {'username': user['username'], 'email': user['email'],
+                       'pub_date': tweet['pub_date'], 'text': tweet['text']}
+            messages.append(message)
+    return messages
+
+
 app.jinja_env.filters['datetimeformat'] = format_datetime
 app.jinja_env.filters['gravatar'] = gravatar_url
 

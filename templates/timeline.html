@@ -28,7 +28,7 @@
     {% elif request.endpoint == 'timeline' %}
       <div class="twitbox">
         <h3>What's on your mind {{ g.user.username }}?</h3>
-        <form action="{{ url_for('add_tweet') }}" method="post">
+        <form id="tweet_input" action="{{ url_for('add_tweet') }}" method="post">
           <p><input type="text" name="text" size="60"><!--
           --><input type="submit" value="Share">
         </form>
