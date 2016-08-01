@@ -1,8 +1,13 @@
 import os
-import sqlite3
+import time
+from datetime import datetime
+from hashlib import md5
+
+from bson import ObjectId
 from flask import Flask, request, session, g, redirect, url_for, abort, \
     render_template, flash
 from flask_pymongo import PyMongo
+from werkzeug.security import check_password_hash, generate_password_hash
 
 MONGO_URL = os.environ.get('MONGODB_URI')
 if not MONGO_URL:
@@ -21,83 +26,199 @@ app.config.update(dict(
     PASSWORD='default'
 ))
 app.config.from_envvar('FLASKR_SETTINGS', silent=True)
+PER_PAGE = 30
+DEBUG = True
 
 
-def connect_db():
-    rv = sqlite3.connect(app.config['DATABASE'])
-    rv.row_factory = sqlite3.Row
-    return rv
-
-
-def init_db():
-    db = get_db()
-    with app.open_resource('schema.sql', mode='r') as f:
-        db.cursor().executescript(f.read())
-    db.commit()
-
-
-@app.cli.command('initdb')
-def initdb_command():
-    """Initializes the database."""
-    init_db()
-    print('Initialized the database.')
-
-
-def get_db():
-    if not hasattr(g, 'sqlite_db'):
-        g.sqlite_db = connect_db()
-    return g.sqlite_db
-
-
-@app.teardown_appcontext
-def close_db(error):
-    if hasattr(g, 'sqlite_db'):
-        g.sqlite_db.close()
+@app.before_request
+def before_request():
+    g.user = None
+    if 'user_id' in session:
+        g.user = mongo.db.users.find_one({'_id': ObjectId(session['user_id'])})
 
 
 @app.route('/')
-def show_entries():
-    entries = mongo.db.entries.find()
-    # db = get_db()
-    # cur = db.execute('SELECT title, text FROM entries ORDER BY id DESC')
-    # entries = cur.fetchall()
-    return render_template('show_entries.html', entries=entries)
+def timeline():
+    """Shows a users timeline or if no user is logged in it will
+    redirect to the public timeline.  This timeline shows the user's
+    tweets as well as all the tweets of followed users.
+    """
+    if not g.user:
+        return redirect(url_for('public_timeline'))
+
+    users = mongo.db.users.find({"$or": [{'followed_by': g.user['_id']},
+                                         {'_id': g.user['_id']}]})
+    messages = []
+    for user in users:
+        tweets = user.get('tweets', [])
+        for tweet in tweets:
+            message = {'username': user['username'], 'email': user['email'],
+                       'pub_date': tweet['pub_date'], 'text': tweet['text']}
+            messages.append(message)
+
+    # todo: sort tweets by date
+
+    return render_template('timeline.html', messages=messages)
 
 
-@app.route('/add', methods=['POST'])
-def add_entry():
-    if not session.get('logged_in'):
+@app.route('/public')
+def public_timeline():
+    """Displays the latest tweets of all users."""
+    users = mongo.db.users.find()
+    messages = []
+
+    for user in users:
+        tweets = user.get('tweets', [])
+        for tweet in tweets:
+            message = {'username': user['username'], 'email': user['email'],
+                       'pub_date': tweet['pub_date'], 'text': tweet['text']}
+            messages.append(message)
+
+    return render_template('timeline.html', messages=messages)
+
+
+@app.route('/<username>')
+def user_timeline(username):
+    """Display's a users tweets."""
+    profile_user = get_user_by_name(username)
+    if profile_user is None:
+        abort(404)
+    followed = False
+
+    if g.user:
+        followed_by = profile_user.get('followed_by', [])
+        r = [user_id for user_id in followed_by if user_id == g.user['_id']]
+        if len(r) > 0:
+            followed = True
+
+    users = mongo.db.users.find(
+        {"$or": [{'followed_by': {"$elemMatch": {'_id': profile_user['_id']}}},
+                 {'_id': profile_user['_id']}]})
+
+    messages = []
+    for user in users:
+        tweets = user.get('tweets', [])
+        for tweet in tweets:
+            message = {'username': user['username'], 'email': user['email'], 'pub_date': tweet['pub_date'],
+                       'text': tweet['text']}
+            messages.append(message)
+
+    return render_template('timeline.html', messages=messages, followed=followed,
+                           profile_user=profile_user)
+
+
+@app.route('/<username>/follow')
+def follow_user(username):
+    """Adds the current user as follower of the given user."""
+    if not g.user:
         abort(401)
-    # db = get_db()
-    # db.execute('INSERT INTO entries (title, text) VALUES (?, ?)',
-    #            [request.form['title'], request.form['text']])
-    # db.commit()
-    mongo.db.entries.insert({'title': request.form['title'],
-                             'text': request.form['text']})
-    flash('New entry was successfully posted')
-    return redirect(url_for('show_entries'))
+    followed_user = get_user_by_name(username)
+    if followed_user is None:
+        abort(404)
+
+    mongo.db.users.update({'_id': followed_user['_id']}, {"$push": {'followed_by': g.user['_id']}})
+    flash('You are now following "%s"' % username)
+    return redirect(url_for('user_timeline', username=username))
+
+
+@app.route('/<username>/unfollow')
+def unfollow_user(username):
+    """Removes the current user as follower of the given user."""
+    if not g.user:
+        abort(401)
+    followed_user = get_user_by_name(username)
+    if followed_user is None:
+        abort(404)
+
+    mongo.db.users.update({'_id': followed_user['_id']}, {"$pull": {'followed_by': g.user['_id']}})
+    flash('You are no longer following "%s"' % username)
+    return redirect(url_for('user_timeline', username=username))
+
+
+@app.route('/add_tweet', methods=['POST'])
+def add_tweet():
+    """Registers a new tweets for the user."""
+    if not g.user:
+        abort(401)
+    if request.form['text']:
+        mongo.db.users.update({'_id': g.user['_id']},
+                              {"$push": {'tweets':
+                                             {'text': request.form['text'], 'pub_date': int(time.time())}}})
+        flash('Your tweet was recorded')
+    return redirect(url_for('timeline'))
 
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    if g.user:
+        return redirect(url_for('timeline'))
     error = None
     if request.method == 'POST':
-        if request.form['username'] != app.config['USERNAME']:
+        user = get_user_by_name(request.form['username'])
+        if user is None:
             error = 'Invalid username'
-        elif request.form['password'] != app.config['PASSWORD']:
+        elif not check_password_hash(user['pw_hash'],
+                                     request.form['password']):
             error = 'Invalid password'
         else:
-            session['logged_in'] = True
             flash('You were logged in')
-            return redirect(url_for('show_entries'))
+            session['user_id'] = str(user['_id'])
+            return redirect(url_for('timeline'))
     return render_template('login.html', error=error)
 
 
 @app.route('/logout')
 def logout():
-    session.pop('logged_in', None)
+    session.pop('user_id', None)
     flash('You were logged out')
-    return redirect(url_for('show_entries'))
+    return redirect(url_for('public_timeline'))
+
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if g.user:
+        return redirect(url_for('timeline'))
+    error = None
+    if request.method == 'POST':
+        if not request.form['username']:
+            error = 'You have to enter a username'
+        elif not request.form['email'] or \
+                        '@' not in request.form['email']:
+            error = 'You have to enter a valid email address'
+        elif not request.form['password']:
+            error = 'You have to enter a password'
+        elif request.form['password'] != request.form['password2']:
+            error = 'The two passwords do not match'
+        elif get_user_by_name(request.form['username']) is not None:
+            error = 'The username is already taken'
+        else:
+            pw_hash = generate_password_hash(request.form['password'])
+            username = request.form['username']
+            email = request.form['email']
+            mongo.db.users.insert({'username': username, 'email': email, 'pw_hash': pw_hash})
+            flash('You were successfully registered and can login now')
+            return redirect(url_for('login'))
+    return render_template('register.html', error=error)
+
+
+def format_datetime(timestamp):
+    """Format a timestamp for display."""
+    return datetime.utcfromtimestamp(timestamp).strftime('%Y-%m-%d @ %H:%M')
+
+
+def get_user_by_name(username):
+    return mongo.db.users.find_one({'username': username})
+
+
+def gravatar_url(email, size=80):
+    """Return the gravatar image for the given email address."""
+    return 'http://www.gravatar.com/avatar/%s?d=identicon&s=%d' % \
+           (md5(email.strip().lower().encode('utf-8')).hexdigest(), size)
+
+
+# add some filters to jinja
+app.jinja_env.filters['datetimeformat'] = format_datetime
+app.jinja_env.filters['gravatar'] = gravatar_url
 
 
 @app.route('/hello')
