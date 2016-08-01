@@ -76,17 +76,8 @@ def user_timeline(username):
         if len(r) > 0:
             followed = True
 
-    users = mongo.db.users.find(
-        {"$or": [{'followed_by': {"$elemMatch": {'_id': profile_user['_id']}}},
-                 {'_id': profile_user['_id']}]})
-
-    messages = []
-    for user in users:
-        tweets = user.get('tweets', [])
-        for tweet in tweets:
-            message = {'username': user['username'], 'email': user['email'], 'pub_date': tweet['pub_date'],
-                       'text': tweet['text']}
-            messages.append(message)
+    users = mongo.db.users.find({'_id': profile_user['_id']})
+    messages = compose_message(users)
 
     return render_template('timeline.html', messages=messages, followed=followed,
                            profile_user=profile_user)
