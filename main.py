@@ -204,6 +204,8 @@ def compose_message(users):
             message = {'username': user['username'], 'email': user['email'],
                        'pub_date': tweet['pub_date'], 'text': tweet['text']}
             messages.append(message)
+
+    messages.sort(key=lambda x: x['pub_date'], reverse=True)
     return messages
 
 
