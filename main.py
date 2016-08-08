@@ -9,6 +9,8 @@ from flask import Flask, request, session, g, redirect, url_for, abort, \
 from flask_pymongo import PyMongo
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from forms import LoginForm
+
 MONGO_URL = os.environ.get('MONGODB_URI')
 if not MONGO_URL:
     MONGO_URL = "mongodb://localhost:27017/test_flask_db";
@@ -28,6 +30,8 @@ app.config.update(dict(
 app.config.from_envvar('FLASKR_SETTINGS', silent=True)
 PER_PAGE = 30
 DEBUG = True
+# WTF_CSRF_ENABLED = True
+SECRET_KEY = 'you-will-never-guess'
 
 
 @app.before_request
@@ -132,18 +136,20 @@ def login():
     if g.user:
         return redirect(url_for('timeline'))
     error = None
-    if request.method == 'POST':
-        user = get_user_by_name(request.form['username'])
+
+    form = LoginForm()
+    if form.validate_on_submit():
+        user = get_user_by_name(form.username.data)
         if user is None:
             error = 'Invalid username'
         elif not check_password_hash(user['pw_hash'],
-                                     request.form['password']):
+                                     form.password.data):
             error = 'Invalid password'
         else:
             flash('You were logged in')
             session['user_id'] = str(user['_id'])
             return redirect(url_for('timeline'))
-    return render_template('login.html', error=error)
+    return render_template('login.html', error=error, form=form)
 
 
 @app.route('/logout')
