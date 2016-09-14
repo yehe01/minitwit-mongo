@@ -9,7 +9,7 @@ from flask import Flask, request, session, g, redirect, url_for, abort, \
 from flask_pymongo import PyMongo
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from forms import LoginForm
+from minitwit.forms import LoginForm
 
 MONGO_URL = os.environ.get('MONGODB_URI')
 if not MONGO_URL:
