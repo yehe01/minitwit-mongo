@@ -201,7 +201,6 @@ def gravatar_url(email, size=80):
            (md5(email.strip().lower().encode('utf-8')).hexdigest(), size)
 
 
-# todo: sort tweets by date
 def compose_message(users):
     messages = []
     for user in users:
