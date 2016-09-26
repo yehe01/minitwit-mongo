@@ -22,7 +22,6 @@ app.config['MONGO_URI'] = MONGO_URL
 mongo = PyMongo(app)
 
 app.config.update(dict(
-    DATABASE=os.path.join(app.root_path, 'flaskr.db'),
     SECRET_KEY='development key',
     USERNAME='admin',
     PASSWORD='default'
